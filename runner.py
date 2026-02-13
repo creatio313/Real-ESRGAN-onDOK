@@ -1,10 +1,11 @@
+import runner_util
 import argparse
-import boto3
-from botocore.config import Config
-import glob
 import json
-import os
+import logging
+from pathlib import Path
 import subprocess, sys
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s')
 
 # 環境変数からパラメータを取得
 arg_parser = argparse.ArgumentParser()
@@ -25,58 +26,79 @@ arg_parser.add_argument(
 )
 arg_parser.add_argument(
     '--tasks', 
-    default='[["input.img", 4, "superresolutioned"]]', 
+    default='[["input.jpg", 4, "superresolutioned"]]', 
     help='実行タスクをJSON形式で指定します。',
 )
 arg_parser.add_argument('--s3-endpoint', help='S3互換エンドポイントのURLを指定します。')
 arg_parser.add_argument('--s3-secret', help='S3のシークレットアクセスキーを指定します。')
 arg_parser.add_argument('--s3-token', help='S3のアクセスキーIDを指定します。')
-
 args = arg_parser.parse_args()
 
-tasks = json.loads(args.tasks)
-
-s3_config = Config(
-    # 互換性担保のため、設定を入れる。
-    # https://cloud.sakura.ad.jp/news/2025/02/04/objectstorage_defectversion/?_gl=1%2Awg387d%2A_gcl_aw%2AR0NMLjE3NjgxMjIxMDEuQ2owS0NRaUFzWTNMQmhDd0FSSXNBRjZPNlhqR2V1aDdSejdHZkVUbS1SbTVKSkRBeE9CUGoxQ2FxUjlRQ3BSbFN5Vlo2M1h4UTlXVnVBa2FBdkxyRUFMd193Y0I.%2A_gcl_au%2ANzM1ODg0ODM0LjE3NjA5NjM5MDYuMTQzMDE2MzgwNS4xNzY4MDU2MzU3LjE3NjgwNjE2NTg.
-    request_checksum_calculation="when_required",
-    response_checksum_validation="when_required",
-)
 # キー情報を元にS3APIクライアントを作成
-s3 = boto3.client(
-    's3',
-    endpoint_url=args.s3_endpoint if args.s3_endpoint else None,
-    aws_access_key_id=args.s3_token,
-    aws_secret_access_key=args.s3_secret,
-    config=s3_config,
-)
+# S3互換APIクライアントの生成
+if args.s3_token and args.s3_secret and args.s3_endpoint:
+    s3_client = runner_util.genObjectStorageClient(endpoint=args.s3_endpoint,
+                            token=args.s3_token,
+                            secret=args.s3_secret)
+else:
+    logging.error('S3互換APIクライアントの情報が不足しています。処理を中断します。')
+    sys.exit(1)
 
-print('Start super resolution')
-# 超解像処理の実行
+logging.info('主処理開始')
+tasks = json.loads(args.tasks)
 for task in tasks:
-    inputFileName, outScale, suffix = task
-    inpath = os.path.join('/opt/input/', inputFileName)
-    print('Downloading super resolution input file from S3:', inputFileName)
-    s3.download_file(args.inputbucket, inputFileName, inpath)
-    print('Super resolution input file downloaded:', inpath)
+    input_file_path, out_scale, suffix = task
+    # タスク情報を取得し、ファイルパス・プロンプトが存在しない場合はスキップ
+    if not input_file_path or not out_scale:
+        logging.warning(f'必須パラメータが不足しているため、処理をスキップしました。: {task}')
+        continue
 
+    logging.info(f'超解像タスク開始 -> ファイルパス: {input_file_path}, 出力倍率: {out_scale}, 接尾辞: {suffix}')
+
+    # ローカルの保存先パスを生成。フォルダがない場合は作成する。
+    local_orgin_path = Path("/opt/input") / input_file_path
+    local_orgin_path.parent.mkdir(parents=True, exist_ok=True)
+    local_output_dir = ( Path(args.output) / input_file_path ).parent
+    local_output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        logging.info(f'入力画像を取得します。バケット: {args.inputbucket}, ファイルパス: {input_file_path}')
+        s3_client.download_file(
+            Bucket=args.inputbucket,
+            Key=input_file_path,
+            Filename=local_orgin_path
+            )
+    except Exception as e:
+        logging.error(f'入力画像の取得に失敗しました。: {e}')
+        continue
+    else:
+        logging.info('入力画像の取得に成功しました。')
+
+    logging.info('超解像処理を実行します。')
     subprocess.run([
         sys.executable, "inference_realesrgan.py",
-        "--input", inpath,
-        "--output", args.output,
-        "--outscale", str(outScale),
+        "--input", local_orgin_path,
+        "--output", local_output_dir,
+        "--outscale", str(out_scale),
         "--suffix", suffix,
     ], check=True)
+    logging.info('超解像処理が完了しました。')
 
 # さくらのオブジェクトストレージに格納
-print('Start uploading to S3')
-# 出力フォルダ内のファイルを順々に同名アップロード
-files = glob.glob(os.path.join(args.output, '*'))
-for file in files:
-    print(os.path.basename(file))
+logging.info('出力フォルダ内のファイルを順々にオブジェクトストレージにアップロードします。')
 
-    s3.upload_file(
+for file in Path(args.output).rglob("*"):
+    if not file.is_file():
+        continue
+    # artifact配下の相対パスをキーにする
+    key = str(file.relative_to(Path(args.output)))
+
+    logging.info(f'ファイル{key}をオブジェクトストレージにアップロードします。')
+    s3_client.upload_file(
         Filename=file,
         Bucket=args.outputbucket,
-        Key=os.path.basename(file),
+        Key=key,
     )
+    logging.info('オブジェクトストレージへのアップロードが完了しました。')
+
+logging.info('主処理終了')

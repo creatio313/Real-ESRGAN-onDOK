@@ -32,8 +32,8 @@ $taskList = @()
 
 # 二次元配列化
 foreach ($r in $rows) {
-    # [filename, outscale, suffix] の形式で配列に追加
-    $taskList += ,@($r.filename, $r.outscale, $r.suffix)
+    # [filepath, outscale, suffix] の形式で配列に追加
+    $taskList += ,@($r.filepath, $r.outscale, $r.suffix)
 }
 $tasksJsonString = ConvertTo-Json @($taskList) -Compress
 
@@ -67,7 +67,7 @@ $bodyObject = @{
                 OUTPUT_BUCKET = $S3_OUTPUT_BUCKET
                 TASKS = $tasksJsonString
             }
-            plan = "v100-32gb"
+            plan = "h100-80gb"
         }
     )
     tags = @()

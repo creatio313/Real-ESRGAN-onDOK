@@ -11,32 +11,31 @@ RUN apt-get update && \
         python3-pip \
         libgl1 \
         libglib2.0-0 \
-        wget
+        wget && \
+    rm -rf /var/lib/apt/lists/*
 RUN git clone https://github.com/xinntao/Real-ESRGAN.git
 RUN pip install torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
 RUN pip install \
-        "numpy<2" \
         basicsr \
+        boto3 \
         facexlib \
         gfpgan \
+        "numpy<2" \
         opencv-python-headless \
         Pillow \
         tqdm \
-        boto3 \
       && \
     pip cache purge && \
-    mkdir /opt/input /opt/artifact && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    mkdir /opt/input /opt/artifact
 
 WORKDIR /Real-ESRGAN
 
 RUN python3 setup.py develop
 RUN wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth -P weights
 
-COPY runner.py /Real-ESRGAN/
+COPY runner*.py /Real-ESRGAN/
 COPY docker-entrypoint*.sh /
 RUN chmod +x /docker-entrypoint*.sh /
 
 WORKDIR /
-CMD ["/bin/bash", "/docker-entrypoint.sh"]
+ENTRYPOINT [ "/docker-entrypoint.sh" ]
