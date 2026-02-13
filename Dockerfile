@@ -35,7 +35,7 @@ RUN wget https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESR
 
 COPY runner*.py /Real-ESRGAN/
 COPY docker-entrypoint*.sh /
-RUN chmod +x /docker-entrypoint*.sh /
+RUN chmod +x /docker-entrypoint.sh
 
 WORKDIR /
 ENTRYPOINT [ "/docker-entrypoint.sh" ]
