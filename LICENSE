@@ -4,9 +4,8 @@ License Information
 This project contains code derived from Real-ESRGAN, which is licensed under the BSD 3-Clause License.
 
 PROJECT STRUCTURE:
-- callSuperResDOK.ps1, runner.py, runner_util.py: Licensed under the Apache License 2.0 (Original work)
 - filesForDocker/inference_realesrgan.py: Based on Real-ESRGAN, licensed under the BSD 3-Clause License
-- filesForDocker/Dockerfile, docker-entrypoint.sh: Licensed under the Apache License 2.0 (Original work)
+- Else: Licensed under the Apache License 2.0 (Original work)
 
 ================================================================================
 THIRD-PARTY LICENSE: Real-ESRGAN (BSD 3-Clause License)
